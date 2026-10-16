@@ -3,6 +3,9 @@ name: Build DitooNichh APK
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -10,6 +13,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -20,29 +24,44 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Extract project
+      - name: Extract Android source ZIP
         run: |
-          unzip -q DitooNichh-Android-Source.zip -d unpacked
-          find unpacked -type f \( -name settings.gradle -o -name settings.gradle.kts \)
+          ZIP_FILE="DitooNichh-Android-Source.zip"
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "Source ZIP tidak ditemukan: $ZIP_FILE"
+            exit 1
+          fi
+          mkdir -p unpacked
+          unzip -q "$ZIP_FILE" -d unpacked
+
+      - name: Locate Gradle project
+        run: |
+          PROJECT_FILE="$(find unpacked -name settings.gradle -o -name settings.gradle.kts | head -n 1)"
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "settings.gradle atau settings.gradle.kts tidak ditemukan."
+            find unpacked -maxdepth 4 -type f | head -n 100
+            exit 1
+          fi
+          echo "PROJECT_DIR=$(dirname "$PROJECT_FILE")" >> "$GITHUB_ENV"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: "8.9"
 
-      - name: Build APK
+      - name: Build debug APK
         run: |
-          PROJECT_FILE=$(find unpacked \( -name settings.gradle -o -name settings.gradle.kts \) -print -quit)
-          test -n "$PROJECT_FILE"
-          PROJECT_DIR="$(dirname "$PROJECT_FILE")"
           cd "$PROJECT_DIR"
-          gradle assembleDebug --no-daemon
+          if [ -f gradlew ]; then
+            chmod +x gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: DitooNichh-APK
-          path: unpacked/**/app/build/outputs/apk/debug/*.apk
+          path: unpacked/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 7
           
